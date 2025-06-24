@@ -1,0 +1,13 @@
+build/
+lib/
+install/
+*.a
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.obj
+*.lib
+*.pdb
+*.class
