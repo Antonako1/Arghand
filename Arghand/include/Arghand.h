@@ -11,143 +11,352 @@ Author: Antonako1
 #pragma once
 #ifndef ARGHAND_H
 #define ARGHAND_H
-#ifdef _WIN32
-#   ifdef ARGHAND_EXPORTS
-#       define ARGHAND_API __declspec(dllexport)
-#   else
-#       define ARGHAND_API __declspec(dllimport)
-#   endif
-#else
-#   define ARGHAND_API
-#endif
+
+#ifndef __cplusplus
+#error "This header file requires a C++ compiler."
+#endif // __cplusplus
+
 #include <string>
 #include <vector>
 #include <cstdint>
 #include <iostream>
+#include <algorithm>
+#include <stdexcept>
 
-#define QSTU64(x) static_cast<uint64_t>(x)
+/// Converts enum class to uint64_t
+template<typename E>
+constexpr uint64_t QSTU64(E e) {
+    return static_cast<uint64_t>(e);
+}
 
+/// Command option flags.
 enum class CmdOptionFlags : uint64_t {
-    None =              0x00000000,     // No special attributes
-    IsValueRequired =   0x00000002,     // Option requires a value
-    IsList =            0x00000004,     // Option can have multiple values
-    IsHidden =          0x00000008,     // Option is hidden from help output
-    IsDeprecated =      0x00000010,     // Option is deprecated
-    ExpectPath =        0x00000020,     // Option expects a file path
-    IsOptional =        0x00000040,     // Option is optional
-    IsHelpOption =      0x00000080,     // Option is a help option. Parsing will be stopped and help will be printed
-    IsVersionOption =   0x00000100,     // Option is a version. Parsing will be stopped and version will be printed
+    None =              0x00000000,
+    IsValueRequired =   0x00000002,
+    IsList =            0x00000004,
+    IsHelpOption =      0x00000080,
+    IsVersionOption =   0x00000100,
 };
 
-#define NoInputDefault QSTU64(CmdOptionFlags::None) // Default value for options that do not require input
-#define InputDefault QSTU64(CmdOptionFlags::IsValueRequired) // Default value for options that require a value
-#define ListInputDefault QSTU64(CmdOptionFlags::IsList) // Default value for options that can have multiple values
+#define HelpOptionDefault QSTU64(CmdOptionFlags::IsHelpOption)
+#define VersionOptionDefault QSTU64(CmdOptionFlags::IsVersionOption)
+#define NoInputDefault QSTU64(CmdOptionFlags::None)
+#define InputDefault QSTU64(CmdOptionFlags::IsValueRequired)
+#define ListInputDefault QSTU64(CmdOptionFlags::IsList)
 
-typedef struct _CMD_Option { // Represents a command-line option
-    std::string short_name; // Short name of the option (e.g., '-o')
-    std::string long_name; // Long name of the option (e.g., '--option')
-    std::string name; // Combined name for the option (e.g., '-o,--option')
-    uint64_t options; // Bitmask for option flags
-    std::string DefaultValue; // Default value for the option, if applicable
-    std::string description; // Description of the option for help output
+typedef struct _CMD_Option {
+    std::string short_name;
+    std::string long_name;
+    std::string name;
+    uint64_t options;
+    std::string DefaultValue;
+    std::string description;
 } CmdOption, *PCmdOption;
 
-
 #define CMD_OPTION(short_name, long_name, flags, defaultValue, description) \
-    { \
-        short_name, \
-        long_name, \
-        std::string(short_name) + "," + std::string(long_name), \
-        flags, \
-        defaultValue, \
-        description \
-    }
+    { short_name, long_name, std::string(short_name) + "," + std::string(long_name), flags, defaultValue, description }
 
-typedef struct ParsedOption { // Represents a parsed command-line option
-    std::string name;
+typedef struct ParsedOption {
+    std::string short_name;
+    std::string long_name;
     std::vector<std::string> values;
 } ParsedOption, *PParsedOption;
 
-/*
-allow args as follow:
-Style UNIX=-, WINDOWS=/:
+enum class ParserOptions : uint64_t {
+    IgnoreCase = 0x00000001,
+    StyleUnix = 0x00000002,
+    StyleWindows = 0x00000004,
+};
 
-prefixes: -, --, /
-Short args: -o
-Long args: --option, /option
-Values: :value, =value,  value
-List values seperated by 'X' (default is '|')
+constexpr ParserOptions DefaultParserOptions = ParserOptions::StyleUnix;
 
-Example:
-
--h,     --help
-        --set-path=path/to/somewhere
-        --wildcards=*.txt,*.cpp
-*/  
-class ARGHAND_API Arghand {
+class Arghand {
 public:
-    static enum class ParserOptions : uint64_t {
-        IgnoreCase = 0x00000001,        // Ignore case when matching options
-        StyleUnix = 0x00000002,         // Use Unix-style prefixes
-        StyleWindows = 0x00000004,      // Use Windows-style prefixes
-    };
-    static constexpr inline uint64_t DefaultParserOptions = 
-                                        QSTU64(ParserOptions::IgnoreCase) | 
-                                        QSTU64(ParserOptions::StyleUnix);
+    Arghand() {
+        SetParserOptions(DefaultParserOptions);
+        SetApplicationName("Arghand Application");
+        SetSeparator(',');
+        SetHelpHeader("Usage: [options]");
+        SetHelpFooter("For more information, visit the documentation.");
+        SetLicense("BSD-2-Clause.");
+        VersionNumToString(1, 0, 0);
+        this->args.clear();
+        this->cmdOptions.clear();
+        this->parsedOptions.clear();
+    }
 
-
-    void SetParserOptions(uint64_t options);
+    ~Arghand() {}
 
     enum class ParseResult {
         Success,
         Error,
-        HelpRequested
+        MissingValue,
+        SuccessWithHelp,
+        SuccessWithVersion
     };
-    Arghand();
-    ~Arghand();
-    ParseResult parse(int argc, char* argv[]);
 
-    // Turning arguments into different types
-    static bool ToBoolean(std::string& value);
-    static int ToInteger(std::string& value);
-    static double ToDouble(std::string& value);
-    static std::vector<std::string> ToList(std::string& value, char separator = '|');
-    
-    void SetSeparator(char separator) {ListSeparator = separator;}
+    ParseResult parse(int argc, char* argv[]) {
+        bool use_unix_style = (QSTU64(parserOptions) & QSTU64(ParserOptions::StyleUnix)) != 0;
+        bool ignore_case = (QSTU64(parserOptions) & QSTU64(ParserOptions::IgnoreCase)) != 0;
+
+        std::string prefix_lng = use_unix_style ? "--" : "/";
+        std::string prefix_sht = use_unix_style ? "-" : "/";
+
+        parsedOptions.clear();
+        args = CreateVector(argc, argv);
+
+        for (size_t i = 1; i < args.size(); ++i) {
+            std::string arg = args[i];
+            std::string match_arg = arg;
+
+            if (ignore_case) {
+                std::transform(match_arg.begin(), match_arg.end(), match_arg.begin(),
+                            [](unsigned char c) { return std::tolower(c); });
+            }
+
+            bool matched = false;
+            for (const auto& option : cmdOptions) {
+                std::string long_name = option.long_name;
+                std::string short_name = option.short_name;
+
+                if (ignore_case) {
+                    std::transform(long_name.begin(), long_name.end(), long_name.begin(),
+                                [](unsigned char c) { return std::tolower(c); });
+                    std::transform(short_name.begin(), short_name.end(), short_name.begin(),
+                                [](unsigned char c) { return std::tolower(c); });
+                }
+
+                if (match_arg == prefix_lng + long_name || match_arg == prefix_sht + short_name) {
+                    matched = true;
+
+                    // Handle special options
+                    if (option.options & QSTU64(CmdOptionFlags::IsHelpOption)) {
+                        PrintHelp();
+                        return ParseResult::SuccessWithHelp;
+                    }
+
+                    if (option.options & QSTU64(CmdOptionFlags::IsVersionOption)) {
+                        PrintVersion(true);
+                        return ParseResult::SuccessWithVersion;
+                    }
+
+                    ParsedOption parsed;
+                    parsed.short_name = option.short_name;
+                    parsed.long_name = option.long_name;
+
+                    // Handle required value
+                    if (option.options & QSTU64(CmdOptionFlags::IsValueRequired)) {
+                        if (i + 1 < args.size()) {
+                            parsed.values.push_back(args[i + 1]);
+                            ++i; // Skip value in next loop
+                        } else {
+                            std::cerr << "Missing value for option: " << arg << std::endl;
+                            return ParseResult::MissingValue;
+                        }
+                    }
+                    // Handle list
+                    else if (option.options & QSTU64(CmdOptionFlags::IsList)) {
+                        if (i + 1 < args.size()) {
+                            parsed.values = ToList(args[i + 1], ListSeparator);
+                            ++i; // Skip value in next loop
+                        } else {
+                            std::cerr << "Missing list value for option: " << arg << std::endl;
+                            return ParseResult::MissingValue;
+                        }
+                    }
+                    // No value needed
+                    else {
+                        parsed.values.push_back(option.DefaultValue);
+                    }
+
+                    parsedOptions.push_back(parsed);
+                    break;
+                }
+            }
+
+            // If unmatched and looks like an option
+            if (!matched && (arg.rfind(prefix_lng, 0) == 0 || arg.rfind(prefix_sht, 0) == 0)) {
+                std::cerr << "Unknown option: " << arg << std::endl;
+                return ParseResult::Error;
+            }
+        }
+
+        return ParseResult::Success;
+    }
+
+
+    static bool ToBoolean(std::string& value) {
+        std::string buf = value;
+        std::transform(buf.begin(), buf.end(), buf.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return (buf == "true" || buf == "1" || buf == "yes" || buf == "on");
+    }
+
+    static int ToInteger(std::string& value) {
+        try {
+            return std::stoi(value);
+        } catch (const std::invalid_argument&) {
+            std::cerr << "Invalid integer value: " << value << std::endl;
+            return 0;
+        } catch (const std::out_of_range&) {
+            std::cerr << "Integer value out of range: " << value << std::endl;
+            return 0;
+        }
+    }
+
+    static double ToDouble(std::string& value) {
+        try {
+            return std::stod(value);
+        } catch (const std::invalid_argument&) {
+            std::cerr << "Invalid double value: " << value << std::endl;
+            return 0.0;
+        } catch (const std::out_of_range&) {
+            std::cerr << "Double value out of range: " << value << std::endl;
+            return 0.0;
+        }
+    }
+
+    static std::vector<std::string> ToList(const std::string& value, char separator = '|') {
+        std::vector<std::string> list;
+        size_t start = 0;
+        size_t end = value.find(separator);
+        while (end != std::string::npos) {
+            list.push_back(value.substr(start, end - start));
+            start = end + 1;
+            end = value.find(separator, start);
+        }
+        list.push_back(value.substr(start));
+        return list;
+    }
+
+    void SetSeparator(char separator) { ListSeparator = separator; }
     char GetSeparator() const { return ListSeparator; }
 
-    void SetCmdOptions(const std::vector<CmdOption>& options) {
-        copy(cmdOptions.begin(), cmdOptions.end(), std::back_inserter(options));
+    void SetCmdOptions(const std::vector<CmdOption>& options) {cmdOptions = options;}
+
+    const std::vector<CmdOption>& GetCmdOptions() const {return cmdOptions;}
+
+    bool operator[](const std::string& name) const {
+        for (const auto& option : parsedOptions) {
+            if (option.short_name == name || option.long_name == name) {
+                return true;
+            }
+        }
+        return false;
     }
-    const std::vector<CmdOption>& GetCmdOptions() const {
-        return cmdOptions;
+
+    std::string GetValue(const std::string& name) const {
+        for (const auto& option : parsedOptions) {
+            if (option.short_name == name || option.long_name == name) {
+                if (!option.values.empty()) {
+                    return option.values[0];
+                }
+            }
+        }
+        
+        for (const auto& option : cmdOptions) {
+            if (option.short_name == name || option.long_name == name) {
+                return option.DefaultValue;
+            }
+        }
+        return "";
     }
 
-    bool operator[](const std::string& name) const; // Check if an option was parsed
 
-    void PrintHelp() const;
+    std::vector<std::string> GetValues(const std::string& name) {
+        for (auto& option : parsedOptions) {
+            if (option.short_name == name || option.long_name == name) {
+                return option.values;
+            }
+        }
 
-    void SetHelpHeader(const std::string& header) {helpHeader = header;}
-    const std::string& GetHelpHeader() const {return helpHeader;}
-    void SetHelpFooter(const std::string& footer) {helpFooter = footer;}
-    const std::string& GetHelpFooter() const {return helpFooter;}
-    void SetLicense(const std::string& licenseText) {license = licenseText;}
-    const std::string& GetLicense() const {return license;}
-    void SetVersion(const std::string& versionInfo) {version = versionInfo;}
-    const std::string& GetVersion() const {return version;}
+        for (const auto& option : cmdOptions) {
+            if (option.short_name == name || option.long_name == name) {
+                if (option.options & QSTU64(CmdOptionFlags::IsList)) {
+                    std::vector<std::string> list = ToList(option.DefaultValue, ListSeparator);
+                    return list;
+                } else {
+                    static std::vector<std::string> single_value = { option.DefaultValue };
+                    return single_value;
+                }
+            }
+        }
 
+        static std::vector<std::string> empty;
+        return empty;
+    }
+
+    void PrintHelp() const {
+        bool use_unix_style = (QSTU64(parserOptions) & QSTU64(ParserOptions::StyleUnix)) != 0;
+        std::string prefix_lng = use_unix_style ? "--" : "/";
+        std::string prefix_sht = use_unix_style ? "-" : "/";
+        std::cout << helpHeader << std::endl;
+        PrintVersion(false);
+        for (const auto& option : cmdOptions) {
+            bool exists_long_name = !option.long_name.empty();
+            bool exists_short_name = !option.short_name.empty();
+
+            std::cout << (exists_short_name ? prefix_sht + option.short_name : "")
+                      << (exists_short_name && exists_long_name ? ", " : "")
+                      << (exists_long_name ? prefix_lng + option.long_name : "")
+                      << "\t\t\t"
+                      << option.description
+                      << std::endl;
+        }
+        std::cout << helpFooter << std::endl;
+        PrintLicense();
+    }
+
+    void PrintVersion(bool prt_lcs) const {
+        std::cout << applicationName << " Version: " << version << std::endl;
+        if (prt_lcs) {
+            PrintLicense();
+        }
+    }
+    void PrintLicense() const {
+        std::cout << license << std::endl;
+    }
+
+    void SetHelpHeader(const std::string& header) { helpHeader = header; }
+    const std::string& GetHelpHeader() const { return helpHeader; }
+
+    void SetHelpFooter(const std::string& footer) { helpFooter = footer; }
+    const std::string& GetHelpFooter() const { return helpFooter; }
+
+    void SetLicense(const std::string& licenseText) { license = licenseText; }
+    const std::string& GetLicense() const { return license; }
+
+    std::string VersionNumToString(int major, int minor, int patch) const { return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch); }
+
+    void SetVersion(const std::string& versionInfo) { version = versionInfo; }
+    const std::string& GetVersion() const { return version; }
+
+    void SetParserOptions(ParserOptions options) { parserOptions = options; }
+
+    void SetApplicationName(const std::string& name) { applicationName = name; }
+    const std::string& GetApplicationName() const { return applicationName; }
 private:
-    char ListSeparator = '|';
+    std::vector<std::string> CreateVector(int argc, char* argv[]) {
+        std::vector<std::string> args;
+        for (int i = 0; i < argc; ++i) {
+            args.push_back(argv[i]);
+        }
+        return args;
+    }
+
+    char ListSeparator;
     std::vector<std::string> args;
     std::vector<CmdOption> cmdOptions;
     std::vector<ParsedOption> parsedOptions;
 
-    std::string helpHeader; // Header for help output
-    std::string helpFooter; // Footer for help output
-    std::string license; // License displayed in the help output
-    std::string version; // Version information displayed in the help output
-    
-    uint64_t parserOptions;
+    std::string applicationName;
+    std::string helpHeader;
+    std::string helpFooter;
+    std::string license;
+    std::string version;
+
+    ParserOptions parserOptions;
 };
+
 
 #endif // ARGHAND_H

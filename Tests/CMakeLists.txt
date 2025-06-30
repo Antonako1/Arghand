@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(arghand-tests LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 11)
 
-list(APPEND CMAKE_PREFIX_PATH "./install")
-find_package(Arghand REQUIRED)
 add_executable(arghand-tests "src/Test.cpp")
-target_link_libraries(arghand-tests PRIVATE Arghand::Arghand)
+include_directories(arghand-tests PRIVATE "${CMAKE_SOURCE_DIR}/../Arghand/include")

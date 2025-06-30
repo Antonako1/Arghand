@@ -1,6 +1,8 @@
+Arghand-*/
 build/
 lib/
 install/
+*.7z
 *.a
 *.o
 *.so

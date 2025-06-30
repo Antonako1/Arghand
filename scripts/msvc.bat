@@ -6,10 +6,11 @@ set "DEVCMD=devcmd.bat"
 if not "%~1"=="" (
     set "DEVCMD=%~1"
 )
-where cl.exe >nul 2>&1
+where cl.exe
 if %errorlevel% neq 0 (
-    echo cl.exe not found. Running %DEVCMD% to set up MSVC...
+    echo cl.exe not found. Running "%DEVCMD%" to set up MSVC...
     call "%DEVCMD%"
+    echo MSVC has been set up and added to PATH.
 ) else (
     echo MSVC already in PATH.
 )
