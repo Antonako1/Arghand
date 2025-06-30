@@ -9,7 +9,7 @@ int main(int argc, char* argv[]) {
         CMD_OPTION("l", "list",     ListInputDefault,       "",           "Specify a list of values (comma-separated)"),
     };
     handler.SetCmdOptions(options);
-    handler.SetParserOptions(ParserOptions::StyleWindows);
+    handler.SetParserOptions(DefaultParserOptions);
     handler.SetApplicationName("Test Application");
     handler.SetSeparator(',');
     handler.SetHelpHeader("This will be displayed at the top of the help output.");
