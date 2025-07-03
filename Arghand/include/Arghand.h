@@ -62,18 +62,42 @@ typedef struct ParsedOption {
     std::vector<std::string> values;
 } ParsedOption, *PParsedOption;
 
+
+
 enum class ParserOptions : uint64_t {
     IgnoreCase = 0x00000001,
     StyleUnix = 0x00000002,
     StyleWindows = 0x00000004,
+    HelpDisplayAppName = 0x00000008,
+    HelpDisplayVersion = 0x00000010,
+    HelpDisplayLicense = 0x00000020,
+    HelpDisplayHeader = 0x00000040,
+    HelpDisplayFooter = 0x00000080,
+    HelpDisplayAll = QSTU64(HelpDisplayAppName) | QSTU64(HelpDisplayVersion) | QSTU64(HelpDisplayLicense) | QSTU64(HelpDisplayHeader) | QSTU64(HelpDisplayFooter),
+    VersionDisplayFooter = 0x00000100,
+    DefaultOptions = QSTU64(StyleUnix) | QSTU64(HelpDisplayAll)
 };
+// Define bitwise OR operator for ParserOptions if not already defined
+template<typename Enum>
+constexpr auto to_underlying(Enum e) noexcept {
+    return static_cast<std::underlying_type_t<Enum>>(e);
+}
 
-constexpr ParserOptions DefaultParserOptions = ParserOptions::StyleUnix;
+inline ParserOptions operator|(ParserOptions lhs, ParserOptions rhs) {
+    return static_cast<ParserOptions>(to_underlying(lhs) | to_underlying(rhs));
+}
+inline ParserOptions operator&(ParserOptions lhs, ParserOptions rhs) {
+    return static_cast<ParserOptions>(to_underlying(lhs) & to_underlying(rhs));
+}
+inline ParserOptions operator~(ParserOptions e) {
+    return static_cast<ParserOptions>(~to_underlying(e));
+}
+
 
 class Arghand {
 public:
     Arghand() {
-        SetParserOptions(DefaultParserOptions);
+        SetParserOptions(ParserOptions::DefaultOptions);
         SetApplicationName("Arghand Application");
         SetSeparator(',');
         SetHelpHeader("Usage: [options]");
@@ -150,8 +174,11 @@ public:
                             parsed.values.push_back(args[i + 1]);
                             ++i; // Skip value in next loop
                         } else {
-                            std::cerr << "Missing value for option: " << arg << std::endl;
-                            return ParseResult::MissingValue;
+                            if (option.DefaultValue.empty()) {
+                                std::cerr << "Missing value for option: " << arg << std::endl;
+                                return ParseResult::MissingValue;
+                            }
+                            parsed.values.push_back(option.DefaultValue);
                         }
                     }
                     // Handle list
@@ -160,8 +187,11 @@ public:
                             parsed.values = ToList(args[i + 1], ListSeparator);
                             ++i; // Skip value in next loop
                         } else {
-                            std::cerr << "Missing list value for option: " << arg << std::endl;
-                            return ParseResult::MissingValue;
+                            if (option.DefaultValue.empty()) {
+                                std::cerr << "Missing list value for option: " << arg << std::endl;
+                                return ParseResult::MissingValue;
+                            }
+                            parsed.values = ToList(option.DefaultValue, ListSeparator);
                         }
                     }
                     // No value needed
@@ -285,33 +315,48 @@ public:
         static std::vector<std::string> empty;
         return empty;
     }
+#define ParserOptionsExist(x) ((QSTU64(parserOptions) & QSTU64(x)) != 0)
 
     void PrintHelp() const {
         bool use_unix_style = (QSTU64(parserOptions) & QSTU64(ParserOptions::StyleUnix)) != 0;
         std::string prefix_lng = use_unix_style ? "--" : "/";
         std::string prefix_sht = use_unix_style ? "-" : "/";
-        std::cout << helpHeader << std::endl;
-        PrintVersion(false);
+        if(ParserOptionsExist(ParserOptions::HelpDisplayHeader)) {
+            std::cout << helpHeader << std::endl;
+        }
+        if(ParserOptionsExist(ParserOptions::HelpDisplayAppName)) {
+            std::cout << applicationName << std::endl;
+        }
+        if(ParserOptionsExist(ParserOptions::HelpDisplayVersion)) {
+            PrintVersion(false);
+        }
         for (const auto& option : cmdOptions) {
             bool exists_long_name = !option.long_name.empty();
             bool exists_short_name = !option.short_name.empty();
 
-            std::cout << (exists_short_name ? prefix_sht + option.short_name : "")
+            std::cout << (exists_short_name ? prefix_sht + option.short_name : "    ")
                       << (exists_short_name && exists_long_name ? ", " : "")
-                      << (exists_long_name ? prefix_lng + option.long_name : "")
+                      << (exists_long_name ? prefix_lng + option.long_name : "\t")
                       << "\t\t\t"
                       << option.description
                       << std::endl;
         }
-        std::cout << helpFooter << std::endl;
-        PrintLicense();
+        if(ParserOptionsExist(ParserOptions::HelpDisplayFooter)) {
+            std::cout << helpFooter << std::endl;
+        }
+        if(ParserOptionsExist(ParserOptions::HelpDisplayLicense))
+            PrintLicense();
     }
 
     void PrintVersion(bool prt_lcs) const {
-        std::cout << applicationName << " Version: " << version << std::endl;
+        std::cout << applicationName << " version " << version << std::endl;
+        if (prt_lcs && ParserOptionsExist(ParserOptions::VersionDisplayFooter)) {
+            std::cout << versionFooter << std::endl;
+        }
         if (prt_lcs) {
             PrintLicense();
         }
+
     }
     void PrintLicense() const {
         std::cout << license << std::endl;
@@ -335,6 +380,14 @@ public:
 
     void SetApplicationName(const std::string& name) { applicationName = name; }
     const std::string& GetApplicationName() const { return applicationName; }
+
+    void SetVersionFooter(const std::string& footer) {
+        versionFooter = footer;
+    }
+    const std::string& GetVersionFooter() const {
+        return versionFooter;
+    }
+    
 private:
     std::vector<std::string> CreateVector(int argc, char* argv[]) {
         std::vector<std::string> args;
@@ -354,6 +407,7 @@ private:
     std::string helpFooter;
     std::string license;
     std::string version;
+    std::string versionFooter;
 
     ParserOptions parserOptions;
 };
