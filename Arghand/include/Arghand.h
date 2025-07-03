@@ -7,6 +7,60 @@ Documentation and usage instructions for the Arghand library can be found in the
 Licensed under the BSD 2-Clause License. See LICENSE file in the project/package root for details.
 
 Author: Antonako1
+
+
+
+
+
+
+Example application:
+
+This example demonstrates how to use the Arghand library to parse command-line arguments.
+
+#include <Arghand.h>
+
+int main(int argc, char* argv[]) {
+    Arghand handler;
+    std::vector<CmdOption> options = {
+        CMD_OPTION("h", "help",     HelpOptionDefault,      "",           "Display help information"),
+        CMD_OPTION("v", "",  VersionOptionDefault,   "",           "Display version information"),
+        CMD_OPTION("o", "output",   InputDefault,           "output.txt", "Specify output file"),
+        CMD_OPTION("l", "list",     ListInputDefault,       "a,b",           "Specify a list of values (comma-separated)"),
+    };
+    handler.SetCmdOptions(options);
+    handler.SetSeparator(',');
+    handler.SetParserOptions(
+        (ParserOptions::DefaultOptions |
+        ParserOptions::VersionDisplayFooter )
+//        & ~ParserOptions::HelpDisplayHeader
+    );
+
+    handler.SetApplicationName("Arghand-test_app");
+    handler.SetHelpHeader("Arghand - A simple command line argument handler.");
+    handler.SetHelpFooter("\nMaintained at https://github.com/Antonako1/Arghand.");
+    handler.SetLicense("Licensed under the BSD-2-Clause License.");
+    handler.SetVersion(handler.VersionNumToString(1, 0, 0));
+    handler.SetVersionFooter("Maintained at https://github.com/Antonako1/Arghand.");
+    
+    Arghand::ParseResult res = handler.parse(argc, argv);
+    if(res == Arghand::ParseResult::Error){
+        std::cerr << "Error parsing command line arguments." << std::endl;
+        return 1;
+    }
+    
+    if(handler["o"]){
+        std::cout << "Output file specified: " << handler.GetValue("o") << std::endl;
+    } else if(handler["list"]){
+        std::vector<std::string> listValues = handler.GetValues("l");
+        std::cout << "List values specified: ";
+        for (const auto& value : listValues) {
+            std::cout << value << ", ";
+        }
+        std::cout << std::endl;
+    }
+    
+    return 0;
+}
 ---*/
 #pragma once
 #ifndef ARGHAND_H
@@ -30,32 +84,39 @@ constexpr uint64_t QSTU64(E e) {
 }
 
 /// Command option flags.
+/// Combine using bitwise OR. See defines below for common flags.
 enum class CmdOptionFlags : uint64_t {
-    None =              0x00000000,
-    IsValueRequired =   0x00000002,
-    IsList =            0x00000004,
-    IsHelpOption =      0x00000080,
-    IsVersionOption =   0x00000100,
+    None =              0x00000000,     // No input required
+    IsValueRequired =   0x00000002,     // Option requires a value
+    IsList =            0x00000004,     // Option is a list (multiple values allowed, separated by a user defined character)
+    IsHelpOption =      0x00000080,     // Option is a help option. Logs help information and returns from parser with a custom status.
+    IsVersionOption =   0x00000100,     // Option is a version option. Logs version information and returns from parser with a custom status.
+    IsRequired =       0x00000200,      // Option is required. Will help with help message auto generation and parsing.
 };
 
+// Convenience defines for common command option flags
 #define HelpOptionDefault QSTU64(CmdOptionFlags::IsHelpOption)
 #define VersionOptionDefault QSTU64(CmdOptionFlags::IsVersionOption)
 #define NoInputDefault QSTU64(CmdOptionFlags::None)
-#define InputDefault QSTU64(CmdOptionFlags::IsValueRequired)
-#define ListInputDefault QSTU64(CmdOptionFlags::IsList)
+#define InputDefault QSTU64(CmdOptionFlags::IsValueRequired) | QSTU64(CmdOptionFlags::IsRequired)
+#define ListInputDefault QSTU64(CmdOptionFlags::IsList) | QSTU64(CmdOptionFlags::IsRequired)
 
+// Command option structure
 typedef struct _CMD_Option {
-    std::string short_name;
-    std::string long_name;
-    std::string name;
-    uint64_t options;
-    std::string DefaultValue;
-    std::string description;
+    std::string short_name; // Short name of the option (e.g., "-h")
+    std::string long_name;  // Long name of the option (e.g., "--help")
+    std::string name;       // Combined name for easier matching (e.g., "-h,--help")
+    uint64_t options;       // Flags for the option (e.g., IsValueRequired, IsList, IsHelpOption)
+    std::string DefaultValue; // Default value for the option if not provided
+    std::string description;  // Description of the option for help messages
 } CmdOption, *PCmdOption;
 
+// Macro to define a command option with short and long names, flags, default value, and description
+// Usage: CMD_OPTION("h", "help", HelpOptionDefault, "", "Display help
 #define CMD_OPTION(short_name, long_name, flags, defaultValue, description) \
     { short_name, long_name, std::string(short_name) + "," + std::string(long_name), flags, defaultValue, description }
 
+// Parsed option structure
 typedef struct ParsedOption {
     std::string short_name;
     std::string long_name;
@@ -63,26 +124,34 @@ typedef struct ParsedOption {
 } ParsedOption, *PParsedOption;
 
 
-
+/// Parser options for the Arghand library.
+/// These options control the behavior of the argument parser and the whole argument handler.
 enum class ParserOptions : uint64_t {
-    IgnoreCase = 0x00000001,
-    StyleUnix = 0x00000002,
-    StyleWindows = 0x00000004,
-    HelpDisplayAppName = 0x00000008,
-    HelpDisplayVersion = 0x00000010,
-    HelpDisplayLicense = 0x00000020,
-    HelpDisplayHeader = 0x00000040,
-    HelpDisplayFooter = 0x00000080,
-    HelpDisplayAll = QSTU64(HelpDisplayAppName) | QSTU64(HelpDisplayVersion) | QSTU64(HelpDisplayLicense) | QSTU64(HelpDisplayHeader) | QSTU64(HelpDisplayFooter),
-    VersionDisplayFooter = 0x00000100,
-    DefaultOptions = QSTU64(StyleUnix) | QSTU64(HelpDisplayAll)
+    IgnoreCase = 0x00000001,    // Ignore case when matching options
+    StyleUnix = 0x00000002,     // Use Unix-style options (e.g., --option) instead of Windows-style (/option)
+    StyleWindows = 0x00000004,  // Use Windows-style options (e.g., /option) instead of Unix-style (--option)
+    HelpDisplayAppName = 0x00000008,    // Display application name in help output
+    HelpDisplayVersion = 0x00000010,    // Display version information in help output
+    HelpDisplayLicense = 0x00000020,    // Display license information in help output
+    HelpDisplayHeader = 0x00000040,     // Display header in help output
+    HelpDisplayFooter = 0x00000080,     // Display footer in help output
+    VersionDisplayFooter = 0x00000100,  // Display footer in version output
+    HelpAutoGenerateArgumentUsageText = 0x00000200, // Automatically generate argument usage text in help output
+
+    // Display all help information
+    HelpDisplayAll = QSTU64(HelpDisplayLicense) | QSTU64(HelpDisplayHeader) | QSTU64(HelpDisplayFooter) | QSTU64(HelpAutoGenerateArgumentUsageText),
+
+    // Default options for the parser
+    DefaultOptions = QSTU64(StyleUnix) | QSTU64(HelpDisplayAll),
 };
-// Define bitwise OR operator for ParserOptions if not already defined
+
+// Helper function to convert enum class to underlying type
 template<typename Enum>
 constexpr auto to_underlying(Enum e) noexcept {
     return static_cast<std::underlying_type_t<Enum>>(e);
 }
 
+// Overloaded operators for ParserOptions to allow bitwise operations
 inline ParserOptions operator|(ParserOptions lhs, ParserOptions rhs) {
     return static_cast<ParserOptions>(to_underlying(lhs) | to_underlying(rhs));
 }
@@ -93,9 +162,10 @@ inline ParserOptions operator~(ParserOptions e) {
     return static_cast<ParserOptions>(~to_underlying(e));
 }
 
-
+/// Arghand class - Main class for handling command-line arguments
 class Arghand {
 public:
+    /// Default constructor
     Arghand() {
         SetParserOptions(ParserOptions::DefaultOptions);
         SetSeparator(',');
@@ -103,17 +173,22 @@ public:
         this->cmdOptions.clear();
         this->parsedOptions.clear();
     }
-
+    /// Destructor...
     ~Arghand() {}
 
+    /// Enum class for parse results
     enum class ParseResult {
-        Success,
-        Error,
-        MissingValue,
-        SuccessWithHelp,
-        SuccessWithVersion
+        Success,            // Parsing was successful
+        Error,              // An error occurred during parsing
+        MissingValue,       // A required value was missing for an option
+        SuccessWithHelp,    // Parsing was successful and help was displayed
+        SuccessWithVersion  // Parsing was successful and version was displayed
     };
 
+    /// Parses command-line arguments
+    /// @param argc Number of command-line arguments
+    /// @param argv Array of command-line arguments
+    /// @return ParseResult indicating the result of the parsing operation
     ParseResult parse(int argc, char* argv[]) {
         bool use_unix_style = (QSTU64(parserOptions) & QSTU64(ParserOptions::StyleUnix)) != 0;
         bool ignore_case = (QSTU64(parserOptions) & QSTU64(ParserOptions::IgnoreCase)) != 0;
@@ -170,9 +245,9 @@ public:
                             ++i; // Skip value in next loop
                         } else {
                             if (option.DefaultValue.empty()) {
-                                std::cerr << "Missing value for option: " << arg << std::endl;
+                                std::cerr << "Missing value for required option: " << arg << std::endl;
                                 return ParseResult::MissingValue;
-                            }
+                            } else 
                             parsed.values.push_back(option.DefaultValue);
                         }
                     }
@@ -191,7 +266,22 @@ public:
                     }
                     // No value needed
                     else {
-                        parsed.values.push_back(option.DefaultValue);
+                        if(option.options & QSTU64(CmdOptionFlags::IsRequired)) {
+                            if (option.DefaultValue.empty()) {
+                                std::cerr << "Missing value for required option: " << arg << std::endl;
+                                return ParseResult::MissingValue;
+                            } else {
+                                if(!option.DefaultValue.empty())
+                                    parsed.values.push_back(option.DefaultValue);
+                                else 
+                                    return ParseResult::MissingValue;
+                            }
+                        } else {
+                            if(!option.DefaultValue.empty())
+                                parsed.values.push_back(option.DefaultValue);
+                            else 
+                                parsed.values.push_back(""); // Default to empty string if no default value
+                        }
                     }
 
                     parsedOptions.push_back(parsed);
@@ -209,7 +299,10 @@ public:
         return ParseResult::Success;
     }
 
-
+    /// Converts a string to a boolean value.
+    /// @param value The string value to convert
+    /// @return True if the string represents a true value, false otherwise.
+    /// Recognized true values: "true", "1", "yes", "on" (case-insensitive)
     static bool ToBoolean(std::string& value) {
         std::string buf = value;
         std::transform(buf.begin(), buf.end(), buf.begin(),
@@ -217,6 +310,9 @@ public:
         return (buf == "true" || buf == "1" || buf == "yes" || buf == "on");
     }
 
+    /// Converts a string to an integer value.
+    /// @param value The string value to convert
+    /// @return The integer value if conversion is successful, 0 otherwise.
     static int ToInteger(std::string& value) {
         try {
             return std::stoi(value);
@@ -229,6 +325,9 @@ public:
         }
     }
 
+    /// Converts a string to a double value.
+    /// @param value The string value to convert
+    /// @return The double value if conversion is successful, 0.0 otherwise.
     static double ToDouble(std::string& value) {
         try {
             return std::stod(value);
@@ -241,6 +340,11 @@ public:
         }
     }
 
+    /// Converts a string to a list of strings, separated by a specified character.
+    /// @param value The string value to convert
+    /// @param separator The character used to separate values in the string (default is '|')
+    /// @return A vector of strings containing the separated values.
+    /// If the string is empty, returns an empty vector.
     static std::vector<std::string> ToList(const std::string& value, char separator = '|') {
         std::vector<std::string> list;
         size_t start = 0;
@@ -254,13 +358,22 @@ public:
         return list;
     }
 
+    /// Sets the separator character for list options.
+    /// @param separator The character to use as a separator for list options (default is '|')
+    /// This character is used to split list values in options that are marked as lists.
     void SetSeparator(char separator) { ListSeparator = separator; }
+    /// Gets the current separator character for list options.
+    /// @return The character used as a separator for list options.
     char GetSeparator() const { return ListSeparator; }
 
+    /// Sets the command options for the argument handler.
     void SetCmdOptions(const std::vector<CmdOption>& options) {cmdOptions = options;}
-
+    /// Gets the command options currently set in the argument handler.
     const std::vector<CmdOption>& GetCmdOptions() const {return cmdOptions;}
 
+    /// Checks if an option with the given name exists in the parsed options.
+    /// @param name The name of the option to check (can be short or long name)
+    /// @return True if the option exists, false otherwise.
     bool operator[](const std::string& name) const {
         for (const auto& option : parsedOptions) {
             if (option.short_name == name || option.long_name == name) {
@@ -269,7 +382,9 @@ public:
         }
         return false;
     }
-
+    /// Gets the value of an option by its name.
+    /// @param name The name of the option to get the value for (can be short or long name)
+    /// @return The value of the option if it exists, or an empty string if not
     std::string GetValue(const std::string& name) const {
         for (const auto& option : parsedOptions) {
             if (option.short_name == name || option.long_name == name) {
@@ -287,7 +402,9 @@ public:
         return "";
     }
 
-
+    /// Gets the values of an option by its name.
+    /// @param name The name of the option to get the values for (can be short or long name)
+    /// @return A vector of strings containing the values of the option if it exists, or an empty vector if not
     std::vector<std::string> GetValues(const std::string& name) {
         for (auto& option : parsedOptions) {
             if (option.short_name == name || option.long_name == name) {
@@ -310,8 +427,12 @@ public:
         static std::vector<std::string> empty;
         return empty;
     }
+
+// Macro to check if a specific parser option exists
 #define ParserOptionsExist(x) ((QSTU64(parserOptions) & QSTU64(x)) != 0)
 
+    /// @brief Prints the help information for the command-line options.
+    /// This function generates and displays the help text based on the command options set in the handler
     void PrintHelp() const {
         bool use_unix_style = (QSTU64(parserOptions) & QSTU64(ParserOptions::StyleUnix)) != 0;
         std::string prefix_lng = use_unix_style ? "--" : "/";
@@ -324,6 +445,35 @@ public:
         }
         if(ParserOptionsExist(ParserOptions::HelpDisplayVersion)) {
             PrintVersion(false);
+        }
+
+        if(ParserOptionsExist(ParserOptions::HelpAutoGenerateArgumentUsageText)) {
+            std::cout << "Usage: \n\t" << applicationName << " ";
+            for(const auto& option : cmdOptions) {
+                bool exists_long_name = !option.long_name.empty();
+                bool exists_short_name = !option.short_name.empty();
+                char br_o = ' ';
+                char br_c = ' ';
+                if (option.options & QSTU64(CmdOptionFlags::IsRequired)) {
+                    br_o = '{';
+                    br_c = '}';
+                } else {
+                    br_o = '[';
+                    br_c = ']';
+                }
+                if(option.options & QSTU64(CmdOptionFlags::IsValueRequired) || option.options & QSTU64(CmdOptionFlags::IsList)) std::cout << br_o;
+                std::cout << br_o << (exists_short_name ? prefix_sht + option.short_name : "    ")
+                            << (exists_short_name && exists_long_name ? " | " : "")
+                            << (exists_long_name ? prefix_lng + option.long_name : "") << br_c;
+                if(option.options & QSTU64(CmdOptionFlags::IsValueRequired)) {
+                    std::cout << " <value>";
+                } else if(option.options & QSTU64(CmdOptionFlags::IsList)) {
+                    std::cout << " <value1" << ListSeparator << "value2" << ">";
+                }
+                if(option.options & QSTU64(CmdOptionFlags::IsValueRequired) || option.options & QSTU64(CmdOptionFlags::IsList)) std::cout << br_c;
+                std::cout <<" ";
+            }
+            std::cout << "\n\n";
         }
         for (const auto& option : cmdOptions) {
             bool exists_long_name = !option.long_name.empty();
@@ -343,6 +493,9 @@ public:
             PrintLicense();
     }
 
+    /// Prints the version information of the application.
+    /// @param prt_lcs If true, prints the license information after the version.
+    /// If the version is not set, it will print an error message.
     void PrintVersion(bool prt_lcs) const {
         if (version.empty()) {
             std::cerr << "Version information is not set." << std::endl;
@@ -364,37 +517,53 @@ public:
         }
 
     }
+
+    /// Prints the license information of the application.
     void PrintLicense() const {
         std::cout << license << std::endl;
     }
 
+    /// Sets the help header text.
     void SetHelpHeader(const std::string& header) { helpHeader = header; }
+    /// Gets the help header text.
     const std::string& GetHelpHeader() const { return helpHeader; }
 
+    /// Sets the help footer text.
     void SetHelpFooter(const std::string& footer) { helpFooter = footer; }
+    /// Gets the help footer text.
     const std::string& GetHelpFooter() const { return helpFooter; }
 
+    /// Sets the license text.
     void SetLicense(const std::string& licenseText) { license = licenseText; }
+    /// Gets the license text.
     const std::string& GetLicense() const { return license; }
 
+    /// Converts version numbers to a string format.
     std::string VersionNumToString(int major, int minor, int patch) const { return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch); }
 
+    /// Sets the version information.
     void SetVersion(const std::string& versionInfo) { version = versionInfo; }
+    /// Gets the version information.
     const std::string& GetVersion() const { return version; }
-
+    /// Sets the parser options for the argument handler.
     void SetParserOptions(ParserOptions options) { parserOptions = options; }
 
+    /// Gets the current parser options.
     void SetApplicationName(const std::string& name) { applicationName = name; }
+    /// Gets the application name.
     const std::string& GetApplicationName() const { return applicationName; }
 
+    /// Gets the current parser options.
     void SetVersionFooter(const std::string& footer) {
         versionFooter = footer;
     }
+    /// Gets the version footer text.
     const std::string& GetVersionFooter() const {
         return versionFooter;
     }
     
 private:
+    /// Creates a vector of strings from command-line arguments.
     std::vector<std::string> CreateVector(int argc, char* argv[]) {
         std::vector<std::string> args;
         for (int i = 0; i < argc; ++i) {
@@ -403,19 +572,19 @@ private:
         return args;
     }
 
-    char ListSeparator;
-    std::vector<std::string> args;
-    std::vector<CmdOption> cmdOptions;
-    std::vector<ParsedOption> parsedOptions;
+    char ListSeparator; // Character used to separate list values in options
+    std::vector<std::string> args;  // Vector to store command-line arguments
+    std::vector<CmdOption> cmdOptions;  // Vector to store command options
+    std::vector<ParsedOption> parsedOptions;    // Vector to store parsed options
 
-    std::string applicationName;
-    std::string helpHeader;
-    std::string helpFooter;
-    std::string license;
-    std::string version;
-    std::string versionFooter;
+    std::string applicationName;    // Name of the application for help and version output
+    std::string helpHeader;     // Header text for help output
+    std::string helpFooter;     // Footer text for help output
+    std::string license;        // License text for the application
+    std::string version;        // Version information for the application
+    std::string versionFooter;  // Footer text for version output
 
-    ParserOptions parserOptions;
+    ParserOptions parserOptions;    // Options for the argument parser, controlling its behavior
 };
 
 

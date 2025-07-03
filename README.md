@@ -2,34 +2,32 @@
 
 ## Usage and documentation
 
-### Example
+### Documentation
+
+Read Arghand\include\Arghand.h for documentation
+
+### Example program
 ```cpp
 #include <Arghand.h>
 
 int main(int argc, char* argv[]) {
     Arghand handler;
     std::vector<CmdOption> options = {
-        CMD_OPTION("", "help",     HelpOptionDefault,      "",           "Display help information"),
+        CMD_OPTION("h", "help",     HelpOptionDefault,      "",           "Display help information"),
         CMD_OPTION("v", "",  VersionOptionDefault,   "",           "Display version information"),
         CMD_OPTION("o", "output",   InputDefault,           "output.txt", "Specify output file"),
         CMD_OPTION("l", "list",     ListInputDefault,       "a,b",           "Specify a list of values (comma-separated)"),
     };
     handler.SetCmdOptions(options);
     handler.SetSeparator(',');
-
-    /*
-    Enable default options and display footer message for version message.
-    Disable from default options: Display application name and display application version
-    */
     handler.SetParserOptions(
         (ParserOptions::DefaultOptions |
-        ParserOptions::VersionDisplayFooter ) & 
-        ~(ParserOptions::HelpDisplayAppName | 
-        ParserOptions::HelpDisplayVersion) 
+        ParserOptions::VersionDisplayFooter )
+//        & ~ParserOptions::HelpDisplayHeader
     );
 
-    handler.SetApplicationName("Arghand");
-    handler.SetHelpHeader("Usage: \n\tArghand test application [options]\n");
+    handler.SetApplicationName("Arghand-test_app");
+    handler.SetHelpHeader("Arghand - A simple command line argument handler.");
     handler.SetHelpFooter("\nMaintained at https://github.com/Antonako1/Arghand.");
     handler.SetLicense("Licensed under the BSD-2-Clause License.");
     handler.SetVersion(handler.VersionNumToString(1, 0, 0));
