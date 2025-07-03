@@ -98,12 +98,7 @@ class Arghand {
 public:
     Arghand() {
         SetParserOptions(ParserOptions::DefaultOptions);
-        SetApplicationName("Arghand Application");
         SetSeparator(',');
-        SetHelpHeader("Usage: [options]");
-        SetHelpFooter("For more information, visit the documentation.");
-        SetLicense("BSD-2-Clause.");
-        VersionNumToString(1, 0, 0);
         this->args.clear();
         this->cmdOptions.clear();
         this->parsedOptions.clear();
@@ -349,7 +344,18 @@ public:
     }
 
     void PrintVersion(bool prt_lcs) const {
-        std::cout << applicationName << " version " << version << std::endl;
+        if (version.empty()) {
+            std::cerr << "Version information is not set." << std::endl;
+        } else {
+            // if no application name is set
+            if (applicationName.empty()) {
+                std::cout << "Version " << version << std::endl;
+            }
+            else {
+                std::cout << applicationName << " version " << version << std::endl;
+            }
+        }
+        
         if (prt_lcs && ParserOptionsExist(ParserOptions::VersionDisplayFooter)) {
             std::cout << versionFooter << std::endl;
         }
