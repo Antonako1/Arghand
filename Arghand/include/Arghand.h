@@ -464,6 +464,7 @@ public:
                       << (exists_long_name ? prefix_lng + option.long_name : "\t")
                       << "\t\t\t"
                       << option.description
+                      << (!option.DefaultValue.empty() ? " | Default value: " + option.DefaultValue : "")
                       << std::endl;
         }
         if(ParserOptionsExist(ParserOptions::HelpDisplayFooter)) {
