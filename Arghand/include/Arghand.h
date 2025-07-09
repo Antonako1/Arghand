@@ -187,48 +187,82 @@ public:
                     // Handle required value
                     if (option.options & QSTU64(CmdOptionFlags::IsValueRequired)) {
                         if (i + 1 < args.size()) {
-                            parsed.values.push_back(args[i + 1]);
-                            ++i; // Skip value in next loop
-                        } else {
-                            if (option.DefaultValue.empty()) {
+                            std::string next = args[i + 1];
+                            bool next_is_option = next.rfind(prefix_lng, 0) == 0 || next.rfind(prefix_sht, 0) == 0;
+
+                            if (!next_is_option) {
+                                parsed.values.push_back(next);
+                                ++i; // Skip the value
+                            }
+                            else {
+                                if (!option.DefaultValue.empty()) {
+                                    parsed.values.push_back(option.DefaultValue);
+                                }
+                                else {
+                                    std::cerr << "Missing value for required option: " << arg << std::endl;
+                                    return ParseResult::MissingValue;
+                                }
+                            }
+                        }
+                        else {
+                            if (!option.DefaultValue.empty()) {
+                                parsed.values.push_back(option.DefaultValue);
+                            }
+                            else {
                                 std::cerr << "Missing value for required option: " << arg << std::endl;
                                 return ParseResult::MissingValue;
-                            } else 
-                            parsed.values.push_back(option.DefaultValue);
+                            }
                         }
                     }
                     // Handle list
                     else if (option.options & QSTU64(CmdOptionFlags::IsList)) {
                         if (i + 1 < args.size()) {
-                            parsed.values = ToList(args[i + 1], ListSeparator);
-                            ++i; // Skip value in next loop
-                        } else {
-                            if (option.DefaultValue.empty()) {
+                            std::string next = args[i + 1];
+                            bool next_is_option = next.rfind(prefix_lng, 0) == 0 || next.rfind(prefix_sht, 0) == 0;
+
+                            if (!next_is_option) {
+                                parsed.values = ToList(next, ListSeparator);
+                                ++i; // Skip the value
+                            }
+                            else {
+                                if (!option.DefaultValue.empty()) {
+                                    parsed.values = ToList(option.DefaultValue, ListSeparator);
+                                }
+                                else {
+                                    std::cerr << "Missing list value for option: " << arg << std::endl;
+                                    return ParseResult::MissingValue;
+                                }
+                            }
+                        }
+                        else {
+                            if (!option.DefaultValue.empty()) {
+                                parsed.values = ToList(option.DefaultValue, ListSeparator);
+                            }
+                            else {
                                 std::cerr << "Missing list value for option: " << arg << std::endl;
                                 return ParseResult::MissingValue;
                             }
-                            parsed.values = ToList(option.DefaultValue, ListSeparator);
                         }
                     }
                     // No value needed
                     else {
-                        if(option.options & QSTU64(CmdOptionFlags::IsRequired)) {
-                            if (option.DefaultValue.empty()) {
+                        if (option.options & QSTU64(CmdOptionFlags::IsRequired)) {
+                            if (!option.DefaultValue.empty()) {
+                                parsed.values.push_back(option.DefaultValue);
+                            }
+                            else {
                                 std::cerr << "Missing value for required option: " << arg << std::endl;
                                 return ParseResult::MissingValue;
-                            } else {
-                                if(!option.DefaultValue.empty())
-                                    parsed.values.push_back(option.DefaultValue);
-                                else 
-                                    return ParseResult::MissingValue;
                             }
-                        } else {
-                            if(!option.DefaultValue.empty())
+                        }
+                        else {
+                            if (!option.DefaultValue.empty())
                                 parsed.values.push_back(option.DefaultValue);
-                            else 
-                                parsed.values.push_back(""); // Default to empty string if no default value
+                            else
+                                parsed.values.push_back(""); // Fallback to empty string
                         }
                     }
+
 
                     parsedOptions.push_back(parsed);
                     break;
@@ -408,7 +442,7 @@ public:
                     br_c = ']';
                 }
                 if(option.options & QSTU64(CmdOptionFlags::IsValueRequired) || option.options & QSTU64(CmdOptionFlags::IsList)) std::cout << br_o;
-                std::cout << br_o << (exists_short_name ? prefix_sht + option.short_name : "    ")
+                std::cout << br_o << (exists_short_name ? prefix_sht + option.short_name : "")
                             << (exists_short_name && exists_long_name ? " | " : "")
                             << (exists_long_name ? prefix_lng + option.long_name : "") << br_c;
                 if(option.options & QSTU64(CmdOptionFlags::IsValueRequired)) {
