@@ -16,12 +16,12 @@ set _package=Arghand-%_version%
 
 rem Create package directory
 mkdir "%_package%"
-mkdir "%_package%\Include"
+mkdir "%_package%\include"
 
 rem Copy files
 copy LICENSE "%_package%\LICENSE.txt"
 copy README.md "%_package%\README.md"
-copy Arghand\Include\*.h "%_package%\Include\"
+copy Arghand\Include\*.h "%_package%\include\"
 
 echo.
 echo Created package: %_package%
